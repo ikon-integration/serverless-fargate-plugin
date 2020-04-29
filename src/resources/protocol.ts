@@ -28,10 +28,10 @@ export class Protocol extends Resource<IServiceProtocolOptions> {
     public getOutputs(): any {
         if (this.cluster.getOptions().disableELB || this.service.getOptions().disableELB) return {};
         return {
-            [this.cluster.getName(NamePostFix.CLUSTER) + this.service.getName(NamePostFix.SERVICE) + this.options.protocol]: {
+            [this.service.getName(NamePostFix.SERVICE) + this.options.protocol]: {
                 "Description": "Elastic load balancer service endpoint",
                 "Export": {
-                    "Name": this.cluster.getName(NamePostFix.CLUSTER) + this.service.getName(NamePostFix.SERVICE) + this.options.protocol
+                    "Name": this.service.getName(NamePostFix.SERVICE) + this.options.protocol
                 },
                 "Value": {
                     "Fn::Join": [
@@ -87,17 +87,30 @@ export class Protocol extends Resource<IServiceProtocolOptions> {
         }
     }
     private generateListenerRule(path: string, index: number, method?: string): any {
+        const usingAuthorizer: boolean = !!(this.options.protocol == 'HTTPS' && this.options.authorizer);
         return {
             [`${this.getName(NamePostFix.LOAD_BALANCER_LISTENER_RULE)}${index}`]: {
                 "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
                 "DeletionPolicy": "Delete",
                 "Properties": {
-                    "Actions": [{
-                        "TargetGroupArn": {
-                            "Ref": this.service.getName(NamePostFix.TARGET_GROUP)
-                        },
-                        "Type": "forward"
-                    }],
+                    "Actions": [
+                        ...(usingAuthorizer ? [{
+                            "AuthenticateCognitoConfig": {
+                                "UserPoolArn": this.options.authorizer.poolArn,
+                                "UserPoolClientId": this.options.authorizer.clientId,
+                                "UserPoolDomain": this.options.authorizer.poolDomain
+                            },
+                            "Type": "authenticate-cognito",
+                            "Order": 1
+                        }] : []),
+                        {
+                            "TargetGroupArn": {
+                                "Ref": this.service.getName(NamePostFix.TARGET_GROUP)
+                            },
+                            "Type": "forward",
+                            ...(usingAuthorizer ? {"Order": 2} : {})
+                        }
+                    ],
                     "Conditions": [
                         {
                             "Field": "path-pattern",
@@ -106,14 +119,19 @@ export class Protocol extends Resource<IServiceProtocolOptions> {
                         ...(method && method != '*' && method != 'ANY' ? [{
                             "Field": "http-request-method",
                             "HttpRequestMethodConfig": { "Values": [method] }
-                        }] : [{}])
+                        }] : []),
+                        ...(usingAuthorizer ? [{
+                            "Field": "http-header",
+                            "HttpHeaderConfig": {
+                                "HttpHeaderName": "authorization",
+                                "Values": [ "*" ]
+                            }
+                        }] : [])
                     ],
                     "ListenerArn": {
                         "Ref": this.cluster.loadBalancer.getName(NamePostFix.LOAD_BALANCER_LISTENER) + this.port
                     },
-                    // increase priority if have more than one handler -- todo: find a way to follow user dictated
-                    // priority while not reusing priority for the same service but different rules.
-                    "Priority": (this.service.getOptions().priority ? this.service.getOptions().priority : 1) + index
+                    "Priority": this.cluster.getServiceListenerPriority(this.service, this)
                 }
             }
         }

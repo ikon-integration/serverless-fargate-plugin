@@ -1,6 +1,12 @@
-# serverless-fargate-plugin
+# serverless-fargate-plugin ![Node.js Package](https://github.com/ikon-integration/serverless-fargate-plugin/workflows/Node.js%20Package/badge.svg)
 
 Based on templates found here: https://github.com/nathanpeck/aws-cloudformation-fargate
+
+### Overall
+
+- ![npm](https://img.shields.io/npm/dy/@ikonintegration/serverless-fargate-plugin) ![npm](https://img.shields.io/npm/v/@ikonintegration/serverless-fargate-plugin) ![npm (tag)](https://img.shields.io/npm/v/@ikonintegration/serverless-fargate-plugin/latest) ![Libraries.io dependency status for latest release, scoped npm package](https://img.shields.io/librariesio/release/npm/@ikonintegration/serverless-fargate-plugin)
+- ![GitHub commit activity](http://expoblvd2.redirectme.net:8555/github/commit-activity/m/ikon-integration/serverless-fargate-plugin)
+- ![GitHub last commit](http://expoblvd2.redirectme.net:8555/github/last-commit/ikon-integration/serverless-fargate-plugin)
 
 #### About
 This plugin will create a cluster, load balancer, vpc, subnets, and one or more services to associate with it. This plugin implements the following approaches:
@@ -48,6 +54,11 @@ If you would like to reference the VPC elsewhere (such as in the [serverless-aur
         protocols: Array<{
             protocol: "HTTP" | "HTTPS";
             certificateArns?: string[]; // needed for https
+            authorizer?: {
+              poolArn: string;
+              clientId: string;
+              poolDomain: string;
+            }; //available on HTTPS only
         }>;
         autoScale: {
               min?: number; //default to 1
@@ -118,6 +129,7 @@ custom:
       - start
       environment:
         PRODUCTION: true
+        ECS_ENABLE_CONTAINER_METADATA: true #https://stackoverflow.com/questions/48819809/how-to-get-task-id-from-within-ecs-container
       protocols:
       - protocol: HTTP
       - protocol: HTTPS

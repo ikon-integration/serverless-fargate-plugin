@@ -3,13 +3,14 @@ import {VPC} from "./vpc";
 import {Service} from "./service";
 import {LoadBalancer} from './loadBalancer';
 import {NamePostFix, Resource} from "../resource";
+import { Protocol } from "./protocol";
 
 export class Cluster extends Resource<IClusterOptions> {
 
     private readonly vpc: VPC;
     public readonly services: Service[];
     public readonly loadBalancer: LoadBalancer;
-    public readonly serviceName: string;
+    private readonly serviceName: string;
 
     public constructor(stage: string, options: IClusterOptions, vpc: VPC, serviceName: string, tags?: object) {
         super(options, stage, `${serviceName}${options.clusterName}`, tags);
@@ -63,6 +64,22 @@ export class Cluster extends Resource<IClusterOptions> {
             ...this.getClusterSecurityGroups(),
             ...this.loadBalancer.generate(),
         }, ...defs);
+    }
+
+    public getServiceListenerPriority(service: Service, protocol: Protocol): number {
+        //Get ordered services
+        const oServices = this.services.sort( (a,b) => {
+            if (!a.getOptions().priority && !b.getOptions().priority) return 0; //dec order
+            if (!a.getOptions().priority) return 1;
+            if (!b.getOptions().priority) return -1;
+            return a.getOptions().priority - b.getOptions().priority;
+        });
+        let p = 1; //starts at 1 by AWS def
+        for (let service of oServices) {
+            if (service == service) {
+                return p + (service.protocols.indexOf(protocol) + 1);
+            } else p += service.protocols.length; //increase by proto count
+        } return -1; //not found
     }
 
     private getClusterSecurityGroups(): any {

@@ -10,7 +10,7 @@ export class LoadBalancer extends Resource<IClusterOptions> {
     private readonly cluster: Cluster;
 
     public constructor(stage: string, options: IClusterOptions, cluster: Cluster, tags?: object) {
-        super(options, stage, `${cluster.serviceName}${options.clusterName}`, tags);
+        super(options, stage, cluster.getNamePrefix(), tags);
         this.cluster = cluster;
     }
 
@@ -59,7 +59,7 @@ export class LoadBalancer extends Resource<IClusterOptions> {
     }
 
     private getSecurityGroupNameByService(service: Service): string {
-        return `${this.getName(NamePostFix.LOAD_BALANCER_SECURITY_GROUP)}${service.getName(NamePostFix.SERVICE)}`;
+        return `${this.getName(NamePostFix.LOAD_BALANCER_SECURITY_GROUP)}${service.getOptions().name}`;
     }
     
     private getServicesSecurityGroups(): object {
@@ -89,32 +89,35 @@ export class LoadBalancer extends Resource<IClusterOptions> {
                         "SecurityGroupIngress": [
                             {
                                 "CidrIp": "0.0.0.0/0",
+                                //Todo: Can we improve security here?
                                 // ...(service.port ? {
                                 //     "IpProtocol": 'tcp',
                                 //     "toPort": service.port,
                                 //     "fromPort": service.port
-                                // } : {
-                                    
-                                // })
+                                // } : { })
                                 "IpProtocol": -1
                             }
                         ]
                     }
                 },
-                [ELBServiceSecGroup + this.getName(NamePostFix.SECURITY_GROUP_INGRESS_ALB)]: {
-                    "Type": "AWS::EC2::SecurityGroupIngress",
-                    "DeletionPolicy": "Delete",
-                    "Properties": {
-                        "Description": `Ingress from the ALB - task ${service.getName(NamePostFix.SERVICE)}`,
-                        "GroupId": {
-                            "Ref": this.cluster.getName(NamePostFix.CONTAINER_SECURITY_GROUP)
-                        },
-                        "IpProtocol": -1,
-                        "SourceSecurityGroupId": {
-                            "Ref": ELBServiceSecGroup
+                ...(!this.cluster.getVPC().useExistingVPC() &&
+                    {
+                        [ELBServiceSecGroup + NamePostFix.SECURITY_GROUP_INGRESS_ALB]: {
+                            "Type": "AWS::EC2::SecurityGroupIngress",
+                            "DeletionPolicy": "Delete",
+                            "Properties": {
+                                "Description": `Ingress from the ALB - task ${service.getName(NamePostFix.SERVICE)}`,
+                                "GroupId": {
+                                    "Ref": this.cluster.getName(NamePostFix.CONTAINER_SECURITY_GROUP)
+                                },
+                                "IpProtocol": -1,
+                                "SourceSecurityGroupId": {
+                                    "Ref": ELBServiceSecGroup
+                                }
+                            }
                         }
                     }
-                }
+                )
             } : {
                 /*TODO: if not public AND also not specifiying a VPC, different secgroup must be created*/
             })
@@ -149,7 +152,7 @@ export class LoadBalancer extends Resource<IClusterOptions> {
                         "Port": listener.proto.port,
                         "Protocol": listener.proto.getOptions().protocol,
                         ...(listener.proto.getOptions().protocol == "HTTPS" ? {
-                            "Certificates": listener.proto.getOptions().certificateArn.map((certificateArn: string): any => ({
+                            "Certificates": listener.proto.getOptions().certificateArns.map((certificateArn: string): any => ({
                                 "CertificateArn": certificateArn
                             }))} : {}
                         )
